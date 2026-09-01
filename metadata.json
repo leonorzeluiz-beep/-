@@ -1,0 +1,6 @@
+{
+  "name": "样机资源规划系统",
+  "description": "企业级零售样机资源规划与决策平台，涵盖样机额度管控、阵地陈列模型细化、多因子规划试算与可视化决策看板。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
