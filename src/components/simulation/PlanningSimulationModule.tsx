@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   SlidersHorizontal,
@@ -20,10 +20,17 @@ import {
   Scale,
   Info,
   ChevronDown,
-  Gauge
+  Gauge,
+  Settings2,
+  PlusCircle,
+  HelpCircle,
+  Sliders
 } from 'lucide-react';
 import { exportRowsToCsv } from '../../utils/calculator';
-import { PositionType, ProductCategory, AutoBalanceStrategy } from '../../types';
+import { PositionType, ProductCategory, AutoBalanceStrategy, FactorDefinition } from '../../types';
+import { FACTOR_CATALOG } from '../../data/factorCatalog';
+import { FactorManagerModal } from './FactorManagerModal';
+import { FactorControlItem } from './FactorControlItem';
 
 export const PlanningSimulationModule: React.FC = () => {
   const {
@@ -33,6 +40,10 @@ export const PlanningSimulationModule: React.FC = () => {
     currentFactors,
     updateFactor,
     saveAsNewScenario,
+    enabledFactorIds,
+    toggleFactorEnabled,
+    setAllFactorsEnabledState,
+    resetDefaultEnabledFactors,
     simulationResult,
     manualAdjustments,
     setManualAdjustment,
@@ -46,6 +57,9 @@ export const PlanningSimulationModule: React.FC = () => {
   } = useApp();
 
   const { summary } = simulationResult;
+
+  // Factor manager modal state
+  const [isFactorModalOpen, setIsFactorModalOpen] = useState(false);
 
   // Filters for the big simulation table
   const [selectedProvinceFilter, setSelectedProvinceFilter] = useState<string>('all');
@@ -63,6 +77,16 @@ export const PlanningSimulationModule: React.FC = () => {
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
   const [newScenarioName, setNewScenarioName] = useState('');
   const [newScenarioDesc, setNewScenarioDesc] = useState('');
+
+  // Group factors by category according to enabledFactorIds
+  const enabledFactorsList = useMemo(() => {
+    return FACTOR_CATALOG.filter(f => enabledFactorIds.includes(f.id));
+  }, [enabledFactorIds]);
+
+  const displayFactors = useMemo(() => enabledFactorsList.filter(f => f.category === 'display'), [enabledFactorsList]);
+  const salesFactors = useMemo(() => enabledFactorsList.filter(f => f.category === 'sales'), [enabledFactorsList]);
+  const strategyFactors = useMemo(() => enabledFactorsList.filter(f => f.category === 'strategy'), [enabledFactorsList]);
+  const constraintFactors = useMemo(() => enabledFactorsList.filter(f => f.category === 'constraint'), [enabledFactorsList]);
 
   // Filter the rows
   const filteredRows = simulationResult.rows.filter(row => {
@@ -345,197 +369,150 @@ export const PlanningSimulationModule: React.FC = () => {
 
       {/* Multi-Factor Simulation Parameters Tuning Dashboard */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4 text-blue-600" />
             <h3 className="font-bold text-sm text-slate-800">核心模型因子微调控制台 (Model Factors)</h3>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+              已启用 {enabledFactorIds.length} / {FACTOR_CATALOG.length} 个因子
+            </span>
           </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-slate-400">滑动因子即可实时秒级重算全量数据</span>
+
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <button
+              onClick={() => setIsFactorModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold shadow-2xs transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>设置因子应用</span>
+            </button>
+
             {Object.keys(manualAdjustments).length > 0 && (
               <button
                 onClick={resetAllManualAdjustments}
-                className="text-amber-700 hover:text-amber-800 underline font-semibold text-xs"
+                className="text-amber-700 hover:text-amber-800 underline font-semibold text-xs ml-1"
               >
-                清空全部人工微调 ({Object.keys(manualAdjustments).length}项)
+                清空人工微调 ({Object.keys(manualAdjustments).length}项)
               </button>
             )}
           </div>
         </div>
 
-        {/* 4 Factor Groups */}
+        {/* 4 Dynamic Factor Groups */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           {/* Group 1: 基础陈列与收敛控制 */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-1.5 text-blue-700 font-bold">
-              <Layers className="w-3.5 h-3.5" />
-              <span>1. 基础陈列与供需收敛</span>
-            </div>
-
-            {/* Display Convergence Ratio Slider */}
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>陈列需求收敛/满足率</span>
-                <span className="font-mono font-bold text-blue-700">
-                  {((currentFactors.displayConvergenceRatio ?? 0.72) * 100).toFixed(0)}%
-                </span>
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-blue-700 font-bold">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>1. 基础陈列与收敛</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-normal">({displayFactors.length}项)</span>
               </div>
-              <input
-                type="range"
-                min="0.4"
-                max="1.0"
-                step="0.02"
-                value={currentFactors.displayConvergenceRatio ?? 0.72}
-                onChange={e => updateFactor('displayConvergenceRatio', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-              />
-              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                用于在额度约束前平滑缩小理论SOP需求与预算缺口
-              </span>
-            </div>
 
-            {/* Mandatory Slot Protection Switch */}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-              <div>
-                <span className="text-slate-700 font-medium block">必陈机位 100% 刚性保底</span>
-                <span className="text-[10px] text-slate-400">收敛与压缩时免削减</span>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentFactors.mandatorySlotProtection ?? true}
-                  onChange={e => updateFactor('mandatorySlotProtection', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-              </label>
+              {displayFactors.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-[11px]">
+                  未勾选该类别因子，点击右上角设置添加
+                </div>
+              ) : (
+                displayFactors.map(factor => (
+                  <FactorControlItem
+                    key={factor.id}
+                    factor={factor}
+                    currentFactors={currentFactors}
+                    updateFactor={updateFactor}
+                    accentColorClass="peer-checked:bg-blue-600"
+                  />
+                ))
+              )}
             </div>
           </div>
 
           {/* Group 2: 销售赋能因子 */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>2. 销售赋能与效能因子</span>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>历史销量加权系数</span>
-                <span className="font-mono font-bold text-emerald-700">
-                  {(currentFactors.salesVolumeWeight * 100).toFixed(0)}%
-                </span>
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-emerald-700 font-bold">
+                <div className="flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>2. 销售赋能与效能</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-normal">({salesFactors.length}项)</span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="1.0"
-                step="0.05"
-                value={currentFactors.salesVolumeWeight}
-                onChange={e => updateFactor('salesVolumeWeight', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-              />
-            </div>
 
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>坪效溢价系数 (S/A店)</span>
-                <span className="font-mono font-bold text-emerald-700">
-                  {currentFactors.salesPerSqmPremium}x
-                </span>
-              </div>
-              <input
-                type="range"
-                min="1.0"
-                max="1.5"
-                step="0.05"
-                value={currentFactors.salesPerSqmPremium}
-                onChange={e => updateFactor('salesPerSqmPremium', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-              />
+              {salesFactors.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-[11px]">
+                  未勾选该类别因子，点击右上角设置添加
+                </div>
+              ) : (
+                salesFactors.map(factor => (
+                  <FactorControlItem
+                    key={factor.id}
+                    factor={factor}
+                    currentFactors={currentFactors}
+                    updateFactor={updateFactor}
+                    accentColorClass="peer-checked:bg-emerald-600"
+                  />
+                ))
+              )}
             </div>
           </div>
 
           {/* Group 3: 营销策略因子 */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-1.5 text-purple-700 font-bold">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>3. 营销策略与新品倾斜</span>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>S级新品加成 (Mate 70/X6)</span>
-                <span className="font-mono font-bold text-purple-700">
-                  {currentFactors.launchTierS_Multiplier}x
-                </span>
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-purple-700 font-bold">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>3. 策略与新品倾斜</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-normal">({strategyFactors.length}项)</span>
               </div>
-              <input
-                type="range"
-                min="1.0"
-                max="2.0"
-                step="0.05"
-                value={currentFactors.launchTierS_Multiplier}
-                onChange={e => updateFactor('launchTierS_Multiplier', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
-              />
-            </div>
 
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>重点城市/核心商圈倾斜</span>
-                <span className="font-mono font-bold text-purple-700">
-                  +{(currentFactors.strategicCityBoost * 100).toFixed(0)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="0.30"
-                step="0.02"
-                value={currentFactors.strategicCityBoost}
-                onChange={e => updateFactor('strategicCityBoost', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
-              />
+              {strategyFactors.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-[11px]">
+                  未勾选该类别因子，点击右上角设置添加
+                </div>
+              ) : (
+                strategyFactors.map(factor => (
+                  <FactorControlItem
+                    key={factor.id}
+                    factor={factor}
+                    currentFactors={currentFactors}
+                    updateFactor={updateFactor}
+                    accentColorClass="peer-checked:bg-purple-600"
+                  />
+                ))
+              )}
             </div>
           </div>
 
           {/* Group 4: 约束边界因子 */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center gap-1.5 text-amber-700 font-bold">
-              <DollarSign className="w-3.5 h-3.5" />
-              <span>4. 资源约束与红线</span>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-slate-700 font-medium">强制封顶于省份总额度</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={currentFactors.enforceQuotaCap}
-                  onChange={e => updateFactor('enforceQuotaCap', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            <div>
-              <div className="flex justify-between text-slate-700 mb-1 font-medium">
-                <span>损耗与周转备机率</span>
-                <span className="font-mono font-bold text-amber-700">
-                  +{(currentFactors.lossAndTurnoverBufferPercent * 100).toFixed(0)}%
-                </span>
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 flex flex-col justify-between">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-amber-700 font-bold">
+                <div className="flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>4. 额度风控与约束</span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-normal">({constraintFactors.length}项)</span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="0.10"
-                step="0.01"
-                value={currentFactors.lossAndTurnoverBufferPercent}
-                onChange={e => updateFactor('lossAndTurnoverBufferPercent', parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-              />
+
+              {constraintFactors.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-[11px]">
+                  未勾选该类别因子，点击右上角设置添加
+                </div>
+              ) : (
+                constraintFactors.map(factor => (
+                  <FactorControlItem
+                    key={factor.id}
+                    factor={factor}
+                    currentFactors={currentFactors}
+                    updateFactor={updateFactor}
+                    accentColorClass="peer-checked:bg-amber-600"
+                  />
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -851,6 +828,18 @@ export const PlanningSimulationModule: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Factor Catalog & Management Modal */}
+      <FactorManagerModal
+        isOpen={isFactorModalOpen}
+        onClose={() => setIsFactorModalOpen(false)}
+        enabledFactorIds={enabledFactorIds}
+        onToggleFactor={toggleFactorEnabled}
+        onBatchSet={setAllFactorsEnabledState}
+        onSetAllFactors={setAllFactorsEnabledState}
+        onResetDefaults={resetDefaultEnabledFactors}
+        currentFactors={currentFactors}
+      />
     </div>
   );
 };

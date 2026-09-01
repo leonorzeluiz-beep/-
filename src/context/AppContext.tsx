@@ -21,6 +21,7 @@ import {
   INITIAL_POSITION_DISPLAY_MODELS,
   INITIAL_SCENARIOS,
 } from '../data/initialData';
+import { DEFAULT_ENABLED_FACTOR_IDS } from '../data/factorCatalog';
 import { runSimulationCalculation, autoBalanceExceededProvinces } from '../utils/calculator';
 
 export type NavTab = 'quota' | 'display' | 'simulation' | 'dashboard';
@@ -48,6 +49,12 @@ interface AppContextType {
   currentFactors: SimulationFactors;
   updateFactor: <K extends keyof SimulationFactors>(key: K, val: SimulationFactors[K]) => void;
   saveAsNewScenario: (name: string, description: string) => void;
+  
+  // Dynamic Factors Management (Enable/Disable in Console)
+  enabledFactorIds: (keyof SimulationFactors)[];
+  toggleFactorEnabled: (factorId: keyof SimulationFactors) => void;
+  setAllFactorsEnabledState: (factorIds: (keyof SimulationFactors)[]) => void;
+  resetDefaultEnabledFactors: () => void;
   
   // Simulation Execution
   simulationResult: {
@@ -104,6 +111,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   const [currentFactors, setCurrentFactors] = useState<SimulationFactors>(activeScenario.factors);
   
+  // Dynamic Enabled Factor IDs state (which factors appear in the simulation factor console)
+  const [enabledFactorIds, setEnabledFactorIds] = useState<(keyof SimulationFactors)[]>(() => {
+    try {
+      const saved = localStorage.getItem('huawei_enabled_factors');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // fallback
+    }
+    return DEFAULT_ENABLED_FACTOR_IDS;
+  });
+
+  const toggleFactorEnabled = (factorId: keyof SimulationFactors) => {
+    setEnabledFactorIds(prev => {
+      const next = prev.includes(factorId)
+        ? prev.filter(id => id !== factorId)
+        : [...prev, factorId];
+      try {
+        localStorage.setItem('huawei_enabled_factors', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const setAllFactorsEnabledState = (factorIds: (keyof SimulationFactors)[]) => {
+    setEnabledFactorIds(factorIds);
+    try {
+      localStorage.setItem('huawei_enabled_factors', JSON.stringify(factorIds));
+    } catch {}
+    showToast(`已批量更新控制台应用因子配置（共启用 ${factorIds.length} 个因子）`, 'info');
+  };
+
+  const resetDefaultEnabledFactors = () => {
+    setEnabledFactorIds(DEFAULT_ENABLED_FACTOR_IDS);
+    try {
+      localStorage.setItem('huawei_enabled_factors', JSON.stringify(DEFAULT_ENABLED_FACTOR_IDS));
+    } catch {}
+    showToast('已重置因子控制台为预设默认应用因子列表', 'info');
+  };
+
   // Sync factor changes when switching scenario
   useEffect(() => {
     const found = scenarios.find(s => s.id === activeScenarioId);
@@ -468,6 +516,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentFactors,
         updateFactor,
         saveAsNewScenario,
+        enabledFactorIds,
+        toggleFactorEnabled,
+        setAllFactorsEnabledState,
+        resetDefaultEnabledFactors,
         simulationResult,
         manualAdjustments,
         setManualAdjustment,

@@ -125,27 +125,54 @@ export interface PositionDisplayModel {
 
 // 样机规划试算因子
 export interface SimulationFactors {
-  // 基础因子与陈列收敛控制
+  // 1. 基础陈列与收敛控制
   baseDisplayWeight: number; // 陈列模型基准需求权重 (0 - 1.5)
   displayConvergenceRatio?: number; // 陈列模型收敛/满足率系数 (0.4 - 1.0，用于平滑陈列大于额度矛盾)
   mandatorySlotProtection?: boolean; // 是否开启必陈机位 100% 刚性保底 (不被额度压缩削减)
-  
-  // 销售因子
+  powerSupplyConstraintWeight?: number; // 门店通电柜位保障率制约 (0.5 - 1.0)
+  minStoreFloorStockUnits?: number; // 核心下沉单店最低保底底线台数 (1 - 5台)
+
+  // 2. 销售赋能与效能因子
   salesVolumeWeight: number; // 历史销量加权系数 (0 - 1.0)
   salesGrowthForecastWeight: number; // 销量增长预期因子 (0.8 - 1.5)
   salesPerSqmPremium: number; // 高坪效门店溢价倍数 (1.0 - 1.5)
-  
-  // 策略因子
+  repEffectivenessBoost?: number; // 促销员/专职体验顾问配备赋能加成 (0% - 25%)
+  highEndConversionPremium?: number; // 高端机型(折叠/Pro)转化能力倾斜 (1.0 - 1.4)
+
+  // 3. 营销策略与新品倾斜
   launchTierS_Multiplier: number; // S级新品样机加成系数 (1.0 - 2.0)
   launchTierA_Multiplier: number; // A级新品样机加成系数 (0.8 - 1.5)
   launchTierB_Multiplier: number; // B级新品样机加成系数 (0.5 - 1.2)
   strategicCityBoost: number; // 战略省份/一线核心商圈倾斜加成 (0% - 30%)
   kaCooperationBoost: number; // KA重点渠道合作加成 (0% - 25%)
-  
-  // 约束因子
+  competitorSuppressionBoost?: number; // 竞品争夺与核心商圈压制系数 (0% - 30%)
+  lifeCyclePhaseMultiplier?: number; // 产品生命周期阶段系数 (0.5 - 1.3)
+
+  // 4. 额度风控与运营约束
   enforceQuotaCap: boolean; // 是否严格封顶于省份总额度
   maxStoreSaturationLimit: number; // 单店样机饱和度上限比例 (如 120%)
   lossAndTurnoverBufferPercent: number; // 损耗与周转备机率 (如 5%)
+  replenishmentCycleDays?: number; // 周转与补货周期时长 (15 - 90天)
+  minDisplayCoverageRatio?: number; // 偏远下沉网点最低覆盖率红线 (50% - 100%)
+}
+
+// 因子元数据配置与启用状态
+export interface FactorDefinition {
+  id: keyof SimulationFactors;
+  name: string;
+  category: 'display' | 'sales' | 'strategy' | 'constraint';
+  categoryName: string;
+  type: 'slider' | 'switch' | 'select';
+  description: string;
+  formulaDescription: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  defaultValue: any;
+  formatValue: (val: any) => string;
+  badge?: string;
+  isAdvanced?: boolean; // 是否为高级/可选扩展因子
 }
 
 // 智能配平算法策略

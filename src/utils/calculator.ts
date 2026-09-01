@@ -102,8 +102,11 @@ export function runSimulationCalculation(
           }
         }
         
-        // 2. 陈列收敛基准需求 (考虑陈列权重与收敛系数)
-        const baseDemand = Math.round(standardDisplayDemand * factors.baseDisplayWeight * convergenceRatio);
+        // 2. 陈列收敛基准需求 (考虑陈列权重、收敛系数及通电展台保障系数)
+        const powerConstraint = factors.powerSupplyConstraintWeight
+          ? ((posModel.powerSupplyCoveragePercent / 100) * factors.powerSupplyConstraintWeight + (1 - factors.powerSupplyConstraintWeight))
+          : 1.0;
+        const baseDemand = Math.round(standardDisplayDemand * factors.baseDisplayWeight * convergenceRatio * powerConstraint);
         
         // 3. 销售赋能因子加权: 
         const normalizedSalesFactor = (province.salesWeight / 0.10);
@@ -115,8 +118,17 @@ export function runSimulationCalculation(
         const sqrPremium = (position.level === 'S' || position.level === 'A') 
           ? factors.salesPerSqmPremium 
           : 1.0;
+        
+        // 专职体验顾问/促销员赋能加成
+        const repBoost = factors.repEffectivenessBoost ? (1 + factors.repEffectivenessBoost * (position.level === 'S' || position.level === 'A' ? 1.0 : 0.5)) : 1.0;
+        
+        // 高端机型转化倾斜 (针对Tier 1省份的折叠屏与高端机)
+        const isHighEnd = (product.category === 'flagship_phone' || product.category === 'foldable_phone') && (product.name.includes('X6') || product.name.includes('Fold') || product.name.includes('Pro+'));
+        const highEndBoost = (isHighEnd && province.gdpTier === 'Tier 1' && factors.highEndConversionPremium)
+          ? factors.highEndConversionPremium
+          : 1.0;
           
-        const salesWeightedDemand = Math.round(baseDemand * salesWeightAdjust * sqrPremium);
+        const salesWeightedDemand = Math.round(baseDemand * salesWeightAdjust * sqrPremium * repBoost * highEndBoost);
         
         // 4. 营销策略因子加权
         let tierMultiplier = 1.0;
@@ -128,13 +140,30 @@ export function runSimulationCalculation(
         const cityBoost = province.gdpTier === 'Tier 1' ? (1 + factors.strategicCityBoost) : 1.0;
         // KA渠道加成
         const kaBoost = (position.level === 'KA') ? (1 + factors.kaCooperationBoost) : 1.0;
+        // 核心商圈竞品压制加成
+        const competitorBoost = (factors.competitorSuppressionBoost && (position.level === 'S' || position.level === 'A'))
+          ? (1 + factors.competitorSuppressionBoost)
+          : 1.0;
+        // 生命周期收敛系数
+        const lifecycleMultiplier = (product.lifecyclePhase === 'mature' || product.lifecyclePhase === 'sunset') && factors.lifeCyclePhaseMultiplier
+          ? factors.lifeCyclePhaseMultiplier
+          : 1.0;
         
-        const strategyMultiplier = tierMultiplier * cityBoost * kaBoost;
+        const strategyMultiplier = tierMultiplier * cityBoost * kaBoost * competitorBoost * lifecycleMultiplier;
         const strategyWeightedDemand = Math.round(salesWeightedDemand * strategyMultiplier);
         
-        // 5. 周转与损耗缓冲
-        const rawWithBuffer = Math.round(strategyWeightedDemand * (1 + factors.lossAndTurnoverBufferPercent));
-        const rawCalculatedDemand = Math.max(0, rawWithBuffer);
+        // 5. 周转与损耗缓冲 (包含补货周期换算)
+        const cycleBufferPercent = factors.replenishmentCycleDays
+          ? ((factors.replenishmentCycleDays / 30) * 0.015)
+          : 0;
+        const totalBufferRate = factors.lossAndTurnoverBufferPercent + cycleBufferPercent;
+        const rawWithBuffer = Math.round(strategyWeightedDemand * (1 + totalBufferRate));
+        
+        // 考虑下沉网点保底底线 (如果该产品属于该店核心必陈品)
+        let rawCalculatedDemand = Math.max(0, rawWithBuffer);
+        if (factors.minStoreFloorStockUnits && isMandatorySlot && storeCount > 0) {
+          rawCalculatedDemand = Math.max(rawCalculatedDemand, factors.minStoreFloorStockUnits * storeCount);
+        }
         
         // 6. 考虑单店饱和度限制
         const maxAllowedPerStore = Math.ceil(posModel.totalDisplayCapacity * factors.maxStoreSaturationLimit);
